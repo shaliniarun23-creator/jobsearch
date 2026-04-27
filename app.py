@@ -12,8 +12,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 load_dotenv()
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
+# Works locally with .env and on Streamlit Cloud with Secrets
+GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY"))
+GOOGLE_CSE_ID = st.secrets.get("GOOGLE_CSE_ID", os.getenv("GOOGLE_CSE_ID"))
 
 
 TARGET_ROLES = [
@@ -33,7 +34,7 @@ TARGET_ROLES = [
     "product manager",
     "strategy associate",
     "strategy manager",
-    "strategy analyst"
+    "strategy analyst",
 ]
 
 TARGET_LOCATIONS = [
@@ -46,7 +47,7 @@ TARGET_LOCATIONS = [
     "Hyderabad",
     "Mumbai",
     "Gurugram",
-    "Remote"
+    "Remote",
 ]
 
 TRUSTED_JOB_SITES = [
@@ -59,7 +60,7 @@ TRUSTED_JOB_SITES = [
     "greenhouse.io",
     "lever.co",
     "workdayjobs.com",
-    "myworkdayjobs.com"
+    "myworkdayjobs.com",
 ]
 
 PROFILE_KEYWORDS = """
@@ -83,7 +84,7 @@ REJECT_KEYWORDS = [
     "ca mandatory",
     "10+ years",
     "12+ years",
-    "15+ years"
+    "15+ years",
 ]
 
 
@@ -146,15 +147,17 @@ def google_search_jobs(role, location, results_per_query=10):
             snippet = clean_text(item.get("snippet", ""))
 
             if any(site in job_url for site in TRUSTED_JOB_SITES):
-                jobs.append({
-                    "Role Search": role,
-                    "Location Search": location,
-                    "Job Title": title,
-                    "Company": extract_company_from_title(title),
-                    "Job URL": job_url,
-                    "Source": extract_source(job_url),
-                    "Snippet": snippet
-                })
+                jobs.append(
+                    {
+                        "Role Search": role,
+                        "Location Search": location,
+                        "Job Title": title,
+                        "Company": extract_company_from_title(title),
+                        "Job URL": job_url,
+                        "Source": extract_source(job_url),
+                        "Snippet": snippet,
+                    }
+                )
 
         return jobs
 
@@ -226,7 +229,7 @@ def extract_years_required(text):
     patterns = [
         r"(\d+)\+?\s*years",
         r"(\d+)\s*-\s*(\d+)\s*years",
-        r"minimum\s*(\d+)\s*years"
+        r"minimum\s*(\d+)\s*years",
     ]
 
     years = []
@@ -282,7 +285,7 @@ def live_job_score(text):
         "posted",
         "actively hiring",
         "reposted",
-        "new"
+        "new",
     ]
 
     closed_signals = [
@@ -290,7 +293,7 @@ def live_job_score(text):
         "job expired",
         "position closed",
         "applications closed",
-        "not accepting applications"
+        "not accepting applications",
     ]
 
     if any(signal in text for signal in closed_signals):
@@ -319,11 +322,11 @@ def calculate_final_score(job):
     rejected = reject_job(title, jd_text)
 
     final_score = (
-        relevance * 0.30 +
-        role_score * 0.25 +
-        loc_score * 0.15 +
-        exp_score * 0.15 +
-        live_score * 0.15
+        relevance * 0.30
+        + role_score * 0.25
+        + loc_score * 0.15
+        + exp_score * 0.15
+        + live_score * 0.15
     )
 
     if rejected:
@@ -339,14 +342,11 @@ def calculate_final_score(job):
         "Live Job Score": live_score,
         "Years Required": years_required,
         "Reject Flag": rejected,
-        "Final Score": final_score
+        "Final Score": final_score,
     }
 
 
-st.set_page_config(
-    page_title="Job Hunt Live Job Finder",
-    layout="wide"
-)
+st.set_page_config(page_title="Job Hunt Live Job Finder", layout="wide")
 
 st.title("Job Hunt Live Job Finder + Ranking Dashboard")
 
@@ -354,6 +354,13 @@ st.warning(
     "This app uses Google Search API to discover public job pages. "
     "It does not directly scrape protected LinkedIn or Indeed search pages."
 )
+
+if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+    st.error(
+        "Missing GOOGLE_API_KEY or GOOGLE_CSE_ID. "
+        "For Streamlit Cloud, add them in Manage app → Settings → Secrets."
+    )
+    st.stop()
 
 with st.sidebar:
     st.header("Search Controls")
@@ -367,31 +374,22 @@ with st.sidebar:
             "chief of staff",
             "consultant",
             "business analyst",
-            "project manager"
-        ]
+            "project manager",
+        ],
     )
 
     selected_locations = st.multiselect(
         "Select locations",
         TARGET_LOCATIONS,
-        default=["India", "Singapore", "UAE", "Dubai"]
+        default=["India", "Singapore", "UAE", "Dubai"],
     )
 
-    results_per_query = st.slider(
-        "Results per role-location search",
-        1,
-        10,
-        5
-    )
+    results_per_query = st.slider("Results per role-location search", 1, 10, 5)
 
     run_search = st.button("Find Live Jobs")
 
 
 if run_search:
-    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
-        st.error("Missing GOOGLE_API_KEY or GOOGLE_CSE_ID in .env file.")
-        st.stop()
-
     all_jobs = []
 
     with st.spinner("Searching live jobs..."):
@@ -440,26 +438,19 @@ if run_search:
         "Experience Score",
         "Live Job Score",
         "Reject Flag",
-        "Job URL"
+        "Job URL",
     ]
 
     st.subheader("Top Ranked Jobs")
-
-    st.dataframe(
-        df[[col for col in display_cols if col in df.columns]],
-        use_container_width=True
-    )
+    st.dataframe(df[[col for col in display_cols if col in df.columns]], use_container_width=True)
 
     st.subheader("Best Jobs to Apply First")
 
-    top_apply = df[
-        (df["Reject Flag"] == False) &
-        (df["Final Score"] >= 70)
-    ].head(20)
+    top_apply = df[(df["Reject Flag"] == False) & (df["Final Score"] >= 70)].head(20)
 
     st.dataframe(
         top_apply[[col for col in display_cols if col in top_apply.columns]],
-        use_container_width=True
+        use_container_width=True,
     )
 
     csv = df.to_csv(index=False).encode("utf-8")
@@ -468,7 +459,7 @@ if run_search:
         "Download Ranked Jobs CSV",
         data=csv,
         file_name="ranked_live_jobs.csv",
-        mime="text/csv"
+        mime="text/csv",
     )
 
 else:
